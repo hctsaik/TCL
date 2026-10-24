@@ -15,8 +15,11 @@ class MainActivity : Activity() {
   private lateinit var countdown: TextView
   private lateinit var adbHelp: TextView
   private lateinit var setupBtn: Button
+  private var focusBtn: View? = null
+  private fun minBtn(m: Int) = Button(this).apply {
+    text = getString(R.string.minutes_btn, m); textSize = 20f; setOnClickListener { start(m) } }
   private val h = Handler(Looper.getMainLooper())
-  private val tick = object : Runnable { override fun run() { refreshCountdown(); h.postDelayed(this, 1000) } }
+  private val tick = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 1000) } }
 
   override fun onCreate(b: Bundle?) {
     super.onCreate(b)
@@ -28,11 +31,13 @@ class MainActivity : Activity() {
     countdown = TextView(this).apply { textSize = 24f; gravity = Gravity.CENTER }
     col.addView(status); col.addView(countdown)
     val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
-    listOf(5, 10, 15, 20, 30, 60).forEach { m -> row.addView(Button(this).apply {
-      text = getString(R.string.minutes_btn, m); textSize = 24f; setOnClickListener { start(m) } }) }
-    row.addView(Button(this).apply { setText(R.string.cancel); textSize = 24f; setOnClickListener {
-      if (Timer.cancel(this@MainActivity)) toast(getString(R.string.cancelled)); refresh() } })
+    listOf(5, 10, 15).forEach { m -> row.addView(minBtn(m)) }
     col.addView(row)
+    val rowB = LinearLayout(this).apply { gravity = Gravity.CENTER }
+    listOf(20, 30, 60).forEach { m -> rowB.addView(minBtn(m)) }
+    rowB.addView(Button(this).apply { setText(R.string.cancel); textSize = 20f; setOnClickListener {
+      if (Timer.cancel(this@MainActivity)) toast(getString(R.string.cancelled)); refresh() } })
+    col.addView(rowB)
     val row2 = LinearLayout(this).apply { gravity = Gravity.CENTER }
     row2.addView(Button(this).apply { setText(R.string.test_now); setOnClickListener { testNow() } })
     setupBtn = Button(this).apply { setText(R.string.setup_a11y); setOnClickListener {
@@ -46,15 +51,20 @@ class MainActivity : Activity() {
     adbHelp = TextView(this).apply { setText(R.string.adb_help); textSize = 14f; visibility = View.GONE }
     col.addView(adbHelp)
     setContentView(ScrollView(this).apply { isFillViewport = true; addView(col) })
-    row.getChildAt(1).requestFocus()
+    focusBtn = row.getChildAt(1); focusBtn?.requestFocus()
     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
       requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
     if (intent.getBooleanExtra(Timer.EXTRA_ERROR, false)) showError()
   }
 
+  override fun onRequestPermissionsResult(code: Int, p: Array<out String>, r: IntArray) {
+    super.onRequestPermissionsResult(code, p, r); focusBtn?.requestFocus()
+  }
+
   override fun onNewIntent(i: Intent) {
     super.onNewIntent(i); setIntent(i)
-    if (i.getBooleanExtra(Timer.EXTRA_ERROR, false)) showError() else if (handleShortcut(i)) refresh()
+    if (i.getBooleanExtra(Timer.EXTRA_ERROR, false)) showError() else handleShortcut(i)
+    refresh()
   }
 
   /** Returns true if a valid minutes extra was handled. Invalid (<=0) values are ignored. */
@@ -65,14 +75,22 @@ class MainActivity : Activity() {
     return Timer.isRunning(this)
   }
 
-  private fun showError() { toast(getString(R.string.poweroff_failed)); adbHelp.visibility = View.VISIBLE; setupBtn.requestFocus() }
+  private fun showError() {
+    if (isDestroyed || isFinishing || !::adbHelp.isInitialized) return
+    toast(getString(R.string.poweroff_failed)); adbHelp.visibility = View.VISIBLE; setupBtn.requestFocus() }
 
-  override fun onResume() { super.onResume(); refresh(); h.post(tick) }
+  override fun onResume() {
+    super.onResume()
+    if (Timer.isRunning(this) && !Timer.isAlarmPending(this)) Timer.clearState(this) // stale (force-stop/reboot)
+    refresh(); h.removeCallbacks(tick); h.post(tick) }
   override fun onPause() { h.removeCallbacks(tick); super.onPause() }
 
   private fun refresh() {
     if (!::status.isInitialized) return
-    val a = getString(if (Timer.isA11yEnabled(this)) R.string.a11y_on else R.string.a11y_off)
+    val a = getString(when {
+      !Timer.isA11yEnabled(this) -> R.string.a11y_off
+      Timer.isA11yConnected() -> R.string.a11y_on
+      else -> R.string.a11y_unbound })
     val d = getString(if (Timer.isAdminActive(this)) R.string.admin_on else R.string.admin_off)
     status.text = "$a　　$d"
     refreshCountdown()
@@ -80,8 +98,8 @@ class MainActivity : Activity() {
   private fun refreshCountdown() {
     if (!::countdown.isInitialized) return
     val ms = Timer.remainingMs(this)
-    countdown.text = if (ms < 0) getString(R.string.not_running) else {
-      val s = (ms + 999) / 1000; getString(R.string.remaining, (s / 60).toInt(), (s % 60).toInt()) }
+    countdown.text = if (!Timer.isRunning(this)) getString(R.string.not_running) else {
+      val s = (maxOf(ms, 0L) + 999) / 1000; getString(R.string.remaining, (s / 60).toInt(), (s % 60).toInt()) }
   }
 
   private fun start(m: Int) {
@@ -100,7 +118,7 @@ class MainActivity : Activity() {
   private fun testNow() {
     if (!Timer.isReady(this)) { toast(getString(R.string.not_ready)); adbHelp.visibility = View.VISIBLE; setupBtn.requestFocus(); return }
     toast(getString(R.string.test_in_3))
-    h.postDelayed({ if (!Timer.powerOff(applicationContext)) showError() }, 3000)
+    h.postDelayed({ Timer.powerOff(applicationContext) { ok -> if (!ok) showError() } }, 3000)
   }
 
   private fun openSettings(i: Intent) {

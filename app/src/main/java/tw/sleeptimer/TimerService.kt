@@ -21,10 +21,11 @@ class TimerService : Service() {
   private fun text(ms: Long) = getString(R.string.notif_remaining, ((ms + 59_999) / 60_000).toInt())
 
   override fun onStartCommand(i: Intent?, f: Int, id: Int): Int {
-    // Must call startForeground promptly after startForegroundService.
-    startForeground(1, notif(getString(R.string.notif_title)))
     h.removeCallbacks(tick)
-    if (i?.action == CANCEL) { Timer.cancel(this); stopSelfNow(); return START_NOT_STICKY }
+    if (i?.action == CANCEL) { stopSelfNow(); return START_NOT_STICKY }
+    // Must call startForeground promptly after startForegroundService; may be refused (e.g. from background).
+    try { startForeground(1, notif(getString(R.string.notif_title))) }
+    catch (e: Exception) { Log.w("SleepTimer", "startForeground refused; alarm is authoritative", e); stopSelfNow(); return START_NOT_STICKY }
     val min = i?.getIntExtra(EXTRA_MINUTES, 0) ?: 0
     if (min > 0) {
       if (!Timer.isReady(this)) { Log.w("SleepTimer", "not ready; refusing"); stopSelfNow(); return START_NOT_STICKY }
@@ -39,13 +40,13 @@ class TimerService : Service() {
   private fun update() {
     try {
       val ms = Timer.remainingMs(this)
-      if (ms < 0 && !Timer.isRunning(this)) { stopSelfNow(); return }
-      if (ms <= 0) { Timer.fire(this); stopSelfNow(); return }
+      // The alarm (PowerOffReceiver) is authoritative; the service never fires.
+      if (!Timer.isRunning(this) || ms <= 0) { stopSelfNow(); return }
       getSystemService(NotificationManager::class.java).notify(1, notif(text(ms)))
       val next = ms % 60_000L
       h.postDelayed(tick, if (next == 0L) 60_000L else next)
     } catch (e: Exception) { Log.e("SleepTimer", "update", e); stopSelfNow() }
   }
-  private fun stopSelfNow() { h.removeCallbacks(tick); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+  private fun stopSelfNow() { h.removeCallbacks(tick); try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}; stopSelf() }
   override fun onDestroy() { h.removeCallbacks(tick); super.onDestroy() }
 }

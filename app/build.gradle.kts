@@ -1,7 +1,7 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
   namespace = "tw.sleeptimer"; compileSdk = 34
-  defaultConfig { applicationId = "tw.sleeptimer"; minSdk = 28; targetSdk = 34; versionCode = 2; versionName = "1.1" }
+  defaultConfig { applicationId = "tw.sleeptimer"; minSdk = 28; targetSdk = 34; versionCode = 3; versionName = "1.2" }
   // Fixed project keystore so every rebuild can be installed over the previous one (adb install -r).
   // Debug-only key, passwords are intentionally public.
   signingConfigs {

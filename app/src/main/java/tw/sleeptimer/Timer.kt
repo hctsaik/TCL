@@ -2,8 +2,7 @@ package tw.sleeptimer
 import android.app.*
 import android.app.admin.DevicePolicyManager
 import android.content.*
-import android.os.Build
-import android.os.SystemClock
+import android.os.*
 import android.provider.Settings
 import android.util.Log
 
@@ -31,6 +30,17 @@ object Timer {
 
   private fun alarmIntent(c: Context) = PendingIntent.getBroadcast(c, 0, Intent(c, PowerOffReceiver::class.java),
     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  /** True if our power-off alarm PendingIntent still exists. */
+  fun isAlarmPending(c: Context) = PendingIntent.getBroadcast(c, 0, Intent(c, PowerOffReceiver::class.java),
+    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) != null
+  fun isA11yConnected() = PowerOffService.instance != null
+  /** Clears saved state and the alarm (no service interaction). */
+  fun clearState(c: Context) {
+    prefs(c).edit().remove(KEY_END).commit()
+    val pi = PendingIntent.getBroadcast(c, 0, Intent(c, PowerOffReceiver::class.java),
+      PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
+    if (pi != null) { c.getSystemService(AlarmManager::class.java).cancel(pi); pi.cancel() }
+  }
 
   fun schedule(c: Context, minutes: Int) {
     val end = SystemClock.elapsedRealtime() + minutes * 60_000L
@@ -46,34 +56,41 @@ object Timer {
     }
   }
 
-  /** Returns true if a timer was running. */
+  /** Returns true if a timer was running. Stops the display service via its CANCEL action. */
   fun cancel(c: Context): Boolean {
     val was = isRunning(c)
-    prefs(c).edit().remove(KEY_END).commit()
-    c.getSystemService(AlarmManager::class.java).cancel(alarmIntent(c))
-    c.stopService(Intent(c, TimerService::class.java))
+    clearState(c)
+    try { c.startService(Intent(c, TimerService::class.java).setAction(TimerService.CANCEL)) }
+    catch (e: Exception) { try { c.stopService(Intent(c, TimerService::class.java)) } catch (_: Exception) {} }
     return was
   }
 
-  /** Try to put the TV into standby. Returns true on success. */
-  fun powerOff(c: Context): Boolean {
-    try {
-      if (PowerOffService.instance?.sleep() == true) return true
-    } catch (e: Exception) { Log.w(TAG, "a11y sleep failed", e) }
-    try {
-      if (isAdminActive(c)) { c.getSystemService(DevicePolicyManager::class.java).lockNow(); return true }
-    } catch (e: Exception) { Log.w(TAG, "lockNow failed", e) }
-    return false
+  /**
+   * Try to put the TV into standby; result delivered on the main thread.
+   * After the a11y action, verifies after ~1.5 s that the screen is off; otherwise falls back to lockNow().
+   */
+  fun powerOff(c: Context, done: (Boolean) -> Unit) {
+    val h = Handler(Looper.getMainLooper())
+    fun admin(): Boolean = try {
+      if (isAdminActive(c)) { c.getSystemService(DevicePolicyManager::class.java).lockNow(); true } else false
+    } catch (e: Exception) { Log.w(TAG, "lockNow failed", e); false }
+    var a11y = false
+    try { a11y = PowerOffService.instance?.sleep() == true } catch (e: Exception) { Log.w(TAG, "a11y sleep failed", e) }
+    if (!a11y) { done(admin()); return }
+    h.postDelayed({
+      val pm = c.getSystemService(PowerManager::class.java)
+      if (!pm.isInteractive) done(true)
+      else { Log.w(TAG, "still interactive after a11y action"); done(admin()) }
+    }, 1500)
   }
 
-  /** Called when the countdown ends (alarm or service). */
-  fun fire(c: Context) {
-    prefs(c).edit().remove(KEY_END).commit()
-    c.getSystemService(AlarmManager::class.java).cancel(alarmIntent(c))
-    var ok = false
-    try { ok = powerOff(c) } catch (e: Exception) { Log.e(TAG, "powerOff", e) }
-    if (!ok) reportFailure(c)
+  /** Called when the alarm fires. */
+  fun fire(c: Context, done: () -> Unit = {}) {
+    clearState(c)
     try { c.stopService(Intent(c, TimerService::class.java)) } catch (_: Exception) {}
+    try {
+      powerOff(c) { ok -> try { if (!ok) reportFailure(c) } finally { done() } }
+    } catch (e: Exception) { Log.e(TAG, "powerOff", e); reportFailure(c); done() }
   }
 
   fun reportFailure(c: Context) {

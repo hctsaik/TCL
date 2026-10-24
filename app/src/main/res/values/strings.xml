@@ -10,6 +10,7 @@
   <string name="started">%1$d 分鐘後關機</string>
   <string name="cancelled">已取消</string>
   <string name="a11y_on">無障礙：已開啟</string>
+  <string name="a11y_unbound">無障礙：已設定但未連線</string>
   <string name="a11y_off">無障礙：未開啟</string>
   <string name="admin_on">裝置管理員：已啟用</string>
   <string name="admin_off">裝置管理員：未啟用</string>
@@ -18,7 +19,11 @@
   <string name="not_ready">尚未設定關機權限：請先開啟「無障礙服務」（或啟用裝置管理員）才能定時關機</string>
   <string name="test_in_3">3 秒後測試關機…</string>
   <string name="settings_missing">找不到該設定頁，已開啟一般設定。也可用電腦 adb 設定，指令如畫面所示。</string>
-  <string name="adb_help">adb 指令：\nadb shell settings put secure enabled_accessibility_services tw.sleeptimer/.PowerOffService\nadb shell settings put secure accessibility_enabled 1\nadb shell dpm set-active-admin tw.sleeptimer/.AdminReceiver</string>
+  <string name="adb_help">adb 指令（注意：settings put 會覆蓋現有無障礙服務清單，若 get 結果不是 null，請用 : 串接原本內容）：
+adb shell settings get secure enabled_accessibility_services
+adb shell settings put secure enabled_accessibility_services tw.sleeptimer/tw.sleeptimer.PowerOffService
+adb shell settings put secure accessibility_enabled 1
+adb shell dpm set-active-admin tw.sleeptimer/.AdminReceiver</string>
   <string name="channel_timer">定時關機倒數</string>
   <string name="channel_alert">定時關機錯誤</string>
   <string name="notif_title">定時關機</string>
