@@ -4,14 +4,16 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-  <uses-permission android:name="android.permission.WAKE_LOCK"/>
-  <application android:label="定時關機" android:banner="@drawable/banner" android:icon="@drawable/banner" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-    <activity android:name=".MainActivity" android:exported="true">
+  <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32"/>
+  <application android:label="@string/app_name" android:banner="@drawable/banner" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+    <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
     </activity>
     <service android:name=".TimerService" android:exported="false" android:foregroundServiceType="specialUse">
-      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="sleep timer"/>
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="sleep timer countdown display"/>
     </service>
+    <receiver android:name=".PowerOffReceiver" android:exported="false"/>
     <service android:name=".PowerOffService" android:exported="false" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
       <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
       <meta-data android:name="android.accessibilityservice" android:resource="@xml/a11y"/>

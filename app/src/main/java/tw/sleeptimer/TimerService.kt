@@ -1,32 +1,51 @@
 package tw.sleeptimer
 import android.app.*
-import android.app.admin.DevicePolicyManager
-import android.content.*
+import android.content.Intent
 import android.os.*
+import android.util.Log
 
+/** Foreground service for display only; the actual power-off is driven by AlarmManager (PowerOffReceiver). */
 class TimerService : Service() {
-  companion object { const val CANCEL = "cancel" }
-  private var timer: CountDownTimer? = null
-  override fun onBind(i: Intent?) = null
-  override fun onStartCommand(i: Intent?, f: Int, id: Int): Int {
-    timer?.cancel()
-    if (i?.action == CANCEL) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY }
-    val min = i?.getIntExtra("minutes", 10) ?: 10
+  companion object { const val CANCEL = "cancel"; const val EXTRA_MINUTES = "minutes" }
+  private val h = Handler(Looper.getMainLooper())
+  private val tick = object : Runnable { override fun run() { update() } }
+  override fun onBind(i: Intent?): IBinder? = null
+
+  private fun notif(text: String): Notification {
     val nm = getSystemService(NotificationManager::class.java)
-    nm.createNotificationChannel(NotificationChannel("t", "定時關機", NotificationManager.IMPORTANCE_LOW))
-    fun notif(s: String) = Notification.Builder(this, "t").setContentTitle("定時關機").setContentText(s)
-      .setSmallIcon(android.R.drawable.ic_lock_power_off).setOngoing(true).build()
-    startForeground(1, notif("$min 分鐘後關機"))
-    timer = object : CountDownTimer(min * 60_000L, 1000) {
-      override fun onTick(ms: Long) { if (ms / 1000 % 30 == 0L) nm.notify(1, notif("剩 ${ms / 60000} 分 ${ms / 1000 % 60} 秒")) }
-      override fun onFinish() { powerOff(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
-    }.start()
-    return START_NOT_STICKY
+    nm.createNotificationChannel(NotificationChannel("t", getString(R.string.channel_timer), NotificationManager.IMPORTANCE_LOW))
+    val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+    return Notification.Builder(this, "t").setContentTitle(getString(R.string.notif_title)).setContentText(text)
+      .setSmallIcon(android.R.drawable.ic_lock_power_off).setOngoing(true).setContentIntent(open).build()
   }
-  private fun powerOff() {
-    if (PowerOffService.instance?.sleep() == true) return
-    val dpm = getSystemService(DevicePolicyManager::class.java)
-    if (dpm.isAdminActive(ComponentName(this, AdminReceiver::class.java))) dpm.lockNow()
+  private fun text(ms: Long) = getString(R.string.notif_remaining, ((ms + 59_999) / 60_000).toInt())
+
+  override fun onStartCommand(i: Intent?, f: Int, id: Int): Int {
+    // Must call startForeground promptly after startForegroundService.
+    startForeground(1, notif(getString(R.string.notif_title)))
+    h.removeCallbacks(tick)
+    if (i?.action == CANCEL) { Timer.cancel(this); stopSelfNow(); return START_NOT_STICKY }
+    val min = i?.getIntExtra(EXTRA_MINUTES, 0) ?: 0
+    if (min > 0) {
+      if (!Timer.isReady(this)) { Log.w("SleepTimer", "not ready; refusing"); stopSelfNow(); return START_NOT_STICKY }
+      Timer.schedule(this, min)
+    }
+    // i == null -> restarted by system (START_STICKY): recompute from persisted endAt.
+    if (!Timer.isRunning(this)) { stopSelfNow(); return START_NOT_STICKY }
+    update()
+    return START_STICKY
   }
-  override fun onDestroy() { timer?.cancel(); super.onDestroy() }
+
+  private fun update() {
+    try {
+      val ms = Timer.remainingMs(this)
+      if (ms < 0 && !Timer.isRunning(this)) { stopSelfNow(); return }
+      if (ms <= 0) { Timer.fire(this); stopSelfNow(); return }
+      getSystemService(NotificationManager::class.java).notify(1, notif(text(ms)))
+      val next = ms % 60_000L
+      h.postDelayed(tick, if (next == 0L) 60_000L else next)
+    } catch (e: Exception) { Log.e("SleepTimer", "update", e); stopSelfNow() }
+  }
+  private fun stopSelfNow() { h.removeCallbacks(tick); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+  override fun onDestroy() { h.removeCallbacks(tick); super.onDestroy() }
 }
