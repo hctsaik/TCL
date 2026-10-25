@@ -74,3 +74,8 @@ adb shell dpm set-active-admin tw.sleeptimer/.AdminReceiver
 ## 快捷方式
 - 語音：「Hey Google，開啟定時關機」可直接開啟 App。
 - adb：`adb shell am start -n tw.sleeptimer/.MainActivity --ei minutes 10`（僅接受 > 0 的數值）
+
+## 版本紀錄
+
+- **v1.3**：遙控器選到的按鈕改為醒目的黃色底＋白色粗框＋黑色粗體字並放大 1.15 倍；深色背景提高對比；畫面上方顯示「目前選擇：XX」。
+- **v1.2**：開機/關機流程強化、取消功能、雙排版面、adb 說明。

@@ -6,7 +6,12 @@ import android.content.*
 import android.content.pm.PackageManager
 import android.os.*
 import android.provider.Settings
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
+import android.view.ViewGroup
 import android.view.View
 import android.widget.*
 
@@ -15,9 +20,34 @@ class MainActivity : Activity() {
   private lateinit var countdown: TextView
   private lateinit var adbHelp: TextView
   private lateinit var setupBtn: Button
+  private lateinit var selected: TextView
   private var focusBtn: View? = null
-  private fun minBtn(m: Int) = Button(this).apply {
-    text = getString(R.string.minutes_btn, m); textSize = 20f; setOnClickListener { start(m) } }
+  private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+  private fun rect(fill: Int, stroke: Int = 0, sc: Int = 0) = GradientDrawable().apply {
+    cornerRadius = dp(12).toFloat(); setColor(fill); if (stroke > 0) setStroke(stroke, sc) }
+  /** Strong TV focus style: amber fill + thick white border + black bold text, scale 1.15 when focused. */
+  private fun styled(b: Button): Button = b.apply {
+    val pressed = rect(0xFFFFA000.toInt(), dp(4), Color.WHITE)
+    val focused = rect(0xFFFFC107.toInt(), dp(4), Color.WHITE)
+    background = StateListDrawable().apply {
+      addState(intArrayOf(android.R.attr.state_pressed), pressed)
+      addState(intArrayOf(android.R.attr.state_focused), focused)
+      addState(intArrayOf(), rect(0xFF333333.toInt())) }
+    stateListAnimator = null; isAllCaps = false; isFocusable = true
+    setPadding(dp(20), dp(10), dp(20), dp(10))
+    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+      .apply { setMargins(dp(16), dp(12), dp(16), dp(12)) }
+    applyFocus(this, false)
+    setOnFocusChangeListener { v, f -> applyFocus(v as Button, f) }
+  }
+  private fun applyFocus(b: Button, f: Boolean) {
+    b.setTextColor(if (f) Color.BLACK else 0xFFCCCCCC.toInt())
+    b.setTypeface(null, if (f) Typeface.BOLD else Typeface.NORMAL)
+    b.animate().scaleX(if (f) 1.15f else 1f).scaleY(if (f) 1.15f else 1f).translationZ(if (f) dp(12).toFloat() else 0f).setDuration(120).start()
+    if (f && ::selected.isInitialized) selected.text = getString(R.string.current_selection, b.text)
+  }
+  private fun minBtn(m: Int) = styled(Button(this).apply {
+    text = getString(R.string.minutes_btn, m); textSize = 20f; setOnClickListener { start(m) } })
   private val h = Handler(Looper.getMainLooper())
   private val tick = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 1000) } }
 
@@ -25,33 +55,35 @@ class MainActivity : Activity() {
     super.onCreate(b)
     // Voice/adb shortcut: am start -n tw.sleeptimer/.MainActivity --ei minutes 10
     if (b == null && handleShortcut(intent)) { finish(); return }
-    val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(48, 32, 48, 32) }
-    col.addView(TextView(this).apply { setText(R.string.app_name); textSize = 36f; gravity = Gravity.CENTER })
-    status = TextView(this).apply { textSize = 20f; gravity = Gravity.CENTER }
-    countdown = TextView(this).apply { textSize = 24f; gravity = Gravity.CENTER }
-    col.addView(status); col.addView(countdown)
-    val row = LinearLayout(this).apply { gravity = Gravity.CENTER }
+    val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(48, 32, 48, 32); clipChildren = false; clipToPadding = false }
+    window.decorView.setBackgroundColor(0xFF101010.toInt())
+    col.addView(TextView(this).apply { setText(R.string.app_name); textSize = 36f; gravity = Gravity.CENTER; setTextColor(Color.WHITE) })
+    status = TextView(this).apply { textSize = 20f; gravity = Gravity.CENTER; setTextColor(0xFFDDDDDD.toInt()) }
+    countdown = TextView(this).apply { textSize = 24f; gravity = Gravity.CENTER; setTextColor(Color.WHITE) }
+    selected = TextView(this).apply { textSize = 30f; gravity = Gravity.CENTER; setTextColor(0xFFFFC107.toInt()); setTypeface(null, Typeface.BOLD); setPadding(0, dp(8), 0, dp(8)) }
+    col.addView(status); col.addView(countdown); col.addView(selected)
+    val row = LinearLayout(this).apply { gravity = Gravity.CENTER; clipChildren = false; clipToPadding = false }
     listOf(5, 10, 15).forEach { m -> row.addView(minBtn(m)) }
     col.addView(row)
-    val rowB = LinearLayout(this).apply { gravity = Gravity.CENTER }
+    val rowB = LinearLayout(this).apply { gravity = Gravity.CENTER; clipChildren = false; clipToPadding = false }
     listOf(20, 30, 60).forEach { m -> rowB.addView(minBtn(m)) }
-    rowB.addView(Button(this).apply { setText(R.string.cancel); textSize = 20f; setOnClickListener {
-      if (Timer.cancel(this@MainActivity)) toast(getString(R.string.cancelled)); refresh() } })
+    rowB.addView(styled(Button(this).apply { setText(R.string.cancel); textSize = 20f; setOnClickListener {
+      if (Timer.cancel(this@MainActivity)) toast(getString(R.string.cancelled)); refresh() } }))
     col.addView(rowB)
-    val row2 = LinearLayout(this).apply { gravity = Gravity.CENTER }
-    row2.addView(Button(this).apply { setText(R.string.test_now); setOnClickListener { testNow() } })
-    setupBtn = Button(this).apply { setText(R.string.setup_a11y); setOnClickListener {
-      openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
+    val row2 = LinearLayout(this).apply { gravity = Gravity.CENTER; clipChildren = false; clipToPadding = false }
+    row2.addView(styled(Button(this).apply { setText(R.string.test_now); textSize = 18f; setOnClickListener { testNow() } }))
+    setupBtn = styled(Button(this).apply { setText(R.string.setup_a11y); textSize = 18f; setOnClickListener {
+      openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } })
     row2.addView(setupBtn)
-    row2.addView(Button(this).apply { setText(R.string.setup_admin); setOnClickListener {
+    row2.addView(styled(Button(this).apply { setText(R.string.setup_admin); textSize = 18f; setOnClickListener {
       openSettings(Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
         .putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, ComponentName(this@MainActivity, AdminReceiver::class.java))
-        .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, getString(R.string.admin_explain))) } })
+        .putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, getString(R.string.admin_explain))) } }))
     col.addView(row2)
-    adbHelp = TextView(this).apply { setText(R.string.adb_help); textSize = 14f; visibility = View.GONE }
+    adbHelp = TextView(this).apply { setText(R.string.adb_help); textSize = 14f; setTextColor(0xFFDDDDDD.toInt()); visibility = View.GONE }
     col.addView(adbHelp)
-    setContentView(ScrollView(this).apply { isFillViewport = true; addView(col) })
-    focusBtn = row.getChildAt(1); focusBtn?.requestFocus()
+    setContentView(ScrollView(this).apply { isFillViewport = true; clipChildren = false; setBackgroundColor(0xFF101010.toInt()); addView(col) })
+    focusBtn = if (Timer.isReady(this)) row.getChildAt(1) else setupBtn; focusBtn?.requestFocus()
     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
       requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
     if (intent.getBooleanExtra(Timer.EXTRA_ERROR, false)) showError()

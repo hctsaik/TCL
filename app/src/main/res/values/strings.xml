@@ -30,4 +30,5 @@ adb shell dpm set-active-admin tw.sleeptimer/.AdminReceiver</string>
   <string name="notif_remaining">剩約 %1$d 分鐘後關機</string>
   <string name="poweroff_failed">關機失敗：無障礙服務未執行且裝置管理員未啟用，請重新設定</string>
   <string name="admin_explain">用於倒數結束時鎖定螢幕（待機）的備援方式</string>
+  <string name="current_selection">目前選擇：%1$s</string>
 </resources>
